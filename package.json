@@ -10,6 +10,8 @@
     "dotenv": "^16.4.5",
     "google-auth-library": "^9.10.0",
     "google-spreadsheet": "^4.1.1",
+    "node-cron": "^4.2.1",
+    "pdfkit": "^0.18.0",
     "telegraf": "^4.16.3"
   }
 }
