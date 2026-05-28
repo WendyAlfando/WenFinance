@@ -380,33 +380,38 @@ bot.on('text', async (ctx) => {
     if (transactions.length === 0) return;
 
     const loadingMsg = await ctx.reply('⏳ Menyimpan...');
-    const serviceAccountAuth = getAuth();
-    const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth);
-    await doc.loadInfo();
-    const sheet = await getSheet(doc, serviceAccountAuth);
-    const dateStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    try {
+        const serviceAccountAuth = getAuth();
+        const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth);
+        await doc.loadInfo();
+        const sheet = await getSheet(doc, serviceAccountAuth);
+        const dateStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 
-    let finalReply = "✅ *Transaksi Berhasil Dicatat!*\n";
-    for (const tx of transactions) {
-        await sheet.addRow({ Tanggal: dateStr, Tipe: tx.tipe, Jumlah: tx.jumlah, Keterangan: tx.keterangan, Kategori: tx.kategori });
-        if (tx.reminderDate) await addReminder(doc, tx.keterangan, tx.reminderDate, ctx.chat.id);
+        let finalReply = "✅ *Transaksi Berhasil Dicatat!*\n";
+        for (const tx of transactions) {
+            await sheet.addRow({ Tanggal: dateStr, Tipe: tx.tipe, Jumlah: tx.jumlah, Keterangan: tx.keterangan, Kategori: tx.kategori });
+            if (tx.reminderDate) await addReminder(doc, tx.keterangan, tx.reminderDate, ctx.chat.id);
 
-        let alertMsg = "";
-        if (tx.tipe === '📉 Pengeluaran') {
-            const currentMonthTitle = `${["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"][new Date().getMonth()]} ${new Date().getFullYear()}`;
-            const budgetRes = await checkBudget(doc, currentMonthTitle, tx.kategori, tx.jumlah);
-            if (budgetRes) alertMsg = `\n⚠️ *AWAS BUDGET OVERLOAD!*\nKategori *${tx.kategori}* melampaui batas (Rp ${budgetRes.currentTotal.toLocaleString('id-ID')} / Rp ${budgetRes.batas.toLocaleString('id-ID')})!`;
+            let alertMsg = "";
+            if (tx.tipe === '📉 Pengeluaran') {
+                const currentMonthTitle = `${["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"][new Date().getMonth()]} ${new Date().getFullYear()}`;
+                const budgetRes = await checkBudget(doc, currentMonthTitle, tx.kategori, tx.jumlah);
+                if (budgetRes) alertMsg = `\n⚠️ *AWAS BUDGET OVERLOAD!*\nKategori *${tx.kategori}* melampaui batas (Rp ${budgetRes.currentTotal.toLocaleString('id-ID')} / Rp ${budgetRes.batas.toLocaleString('id-ID')})!`;
+            }
+
+            const icon = tx.tipe === '📉 Pengeluaran' ? '📉' : '📈';
+            finalReply += `\n${icon} Rp ${tx.jumlah.toLocaleString('id-ID')} | ${tx.keterangan}`;
+            if (tx.reminderDate) finalReply += ` *(Ingat tgl ${tx.reminderDate})*`;
+            if (alertMsg) finalReply += alertMsg;
         }
 
-        const icon = tx.tipe === '📉 Pengeluaran' ? '📉' : '📈';
-        finalReply += `\n${icon} Rp ${tx.jumlah.toLocaleString('id-ID')} | ${tx.keterangan}`;
-        if (tx.reminderDate) finalReply += ` *(Ingat tgl ${tx.reminderDate})*`;
-        if (alertMsg) finalReply += alertMsg;
+        const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+        await updateDashboard(doc, serviceAccountAuth, `${monthNames[new Date().getMonth()]} ${new Date().getFullYear()}`);
+        ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, finalReply, { parse_mode: 'Markdown', ...mainMenu });
+    } catch (err) {
+        console.error(err);
+        ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, `❌ Kesalahan Sistem: ${err.message}`);
     }
-
-    const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-    await updateDashboard(doc, serviceAccountAuth, `${monthNames[new Date().getMonth()]} ${new Date().getFullYear()}`);
-    ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, finalReply, { parse_mode: 'Markdown', ...mainMenu });
 });
 
 bot.launch().then(() => console.log("Bot Telegram sedang berjalan..."));
