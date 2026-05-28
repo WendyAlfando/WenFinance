@@ -333,84 +333,93 @@ bot.action('btn_undo', async (ctx) => { /* logic sama seperti sebelumnya, skip i
 bot.action('btn_laporan', async (ctx) => { /* generate CSV+PDF ... */ ctx.answerCbQuery('Fitur laporan berjalan'); });
 
 bot.on('text', async (ctx) => {
-    const text = ctx.message.text.trim();
-    if (text.startsWith('/')) return;
-
-    let transactions = [];
-    const match = text.match(/^(\+?)(\d+)\s+(.+)$/);
-
-    if (match) {
-        const isPemasukan = match[1] === '+';
-        const jumlah = parseInt(match[2], 10);
-        let keterangan = match[3].trim();
-        const tipe = isPemasukan ? '📈 Pemasukan' : '📉 Pengeluaran';
-        if (jumlah <= 0) return ctx.reply('⚠️ Jumlah uang harus > 0.');
-
-        let reminderDate = null;
-        const remMatch = keterangan.match(/\s+(?:tgl|tanggal|tiap)\s*(\d{1,2})$/i);
-        if (remMatch) {
-            const parsed = parseInt(remMatch[1], 10);
-            if (parsed >= 1 && parsed <= 31) { reminderDate = parsed; keterangan = keterangan.replace(remMatch[0], '').trim(); }
-        }
-        transactions.push({ tipe, jumlah, keterangan, kategori: isPemasukan ? 'Pemasukan' : getKategori(keterangan), reminderDate });
-    } else {
-        if (!genAI) return ctx.reply('❌ Format tidak dikenali dan GEMINI_API_KEY tidak ada.\n\nKetik: `50000 kopi`', { parse_mode: 'Markdown' });
-        const loadingAI = await ctx.reply('🤖 Memproses dengan AI...');
-        try {
-            const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-            const prompt = `Ekstrak satu atau beberapa transaksi keuangan dari teks ini: "${text}". Output HANYA JSON array: [{"tipe": "Pengeluaran"|"Pemasukan", "jumlah": <angka>, "keterangan": "<deskripsi>"}] tanpa backtick atau markdown tambahan.`;
-            const result = await model.generateContent(prompt);
-            let jsonText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-            const parsed = JSON.parse(jsonText);
-            for (const item of parsed) {
-                transactions.push({
-                    tipe: item.tipe === 'Pemasukan' ? '📈 Pemasukan' : '📉 Pengeluaran',
-                    jumlah: item.jumlah, keterangan: item.keterangan,
-                    kategori: item.tipe === 'Pemasukan' ? 'Pemasukan' : getKategori(item.keterangan),
-                    reminderDate: null
-                });
-            }
-            await ctx.telegram.deleteMessage(ctx.chat.id, loadingAI.message_id);
-        } catch (e) {
-            console.error(e);
-            return ctx.telegram.editMessageText(ctx.chat.id, loadingAI.message_id, null, '❌ AI gagal memahami pesanmu.');
-        }
-    }
-
-    if (transactions.length === 0) return;
-
-    const loadingMsg = await ctx.reply('⏳ Menyimpan...');
     try {
-        const serviceAccountAuth = getAuth();
-        const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth);
-        await doc.loadInfo();
-        const sheet = await getSheet(doc, serviceAccountAuth);
-        const dateStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const text = ctx.message.text.trim();
+        if (text.startsWith('/')) return;
 
-        let finalReply = "✅ *Transaksi Berhasil Dicatat!*\n";
-        for (const tx of transactions) {
-            await sheet.addRow({ Tanggal: dateStr, Tipe: tx.tipe, Jumlah: tx.jumlah, Keterangan: tx.keterangan, Kategori: tx.kategori });
-            if (tx.reminderDate) await addReminder(doc, tx.keterangan, tx.reminderDate, ctx.chat.id);
+        let transactions = [];
+        const match = text.match(/^(\+?)(\d+)\s+(.+)$/);
 
-            let alertMsg = "";
-            if (tx.tipe === '📉 Pengeluaran') {
-                const currentMonthTitle = `${["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"][new Date().getMonth()]} ${new Date().getFullYear()}`;
-                const budgetRes = await checkBudget(doc, currentMonthTitle, tx.kategori, tx.jumlah);
-                if (budgetRes) alertMsg = `\n⚠️ *AWAS BUDGET OVERLOAD!*\nKategori *${tx.kategori}* melampaui batas (Rp ${budgetRes.currentTotal.toLocaleString('id-ID')} / Rp ${budgetRes.batas.toLocaleString('id-ID')})!`;
+        if (match) {
+            const isPemasukan = match[1] === '+';
+            const jumlah = parseInt(match[2], 10);
+            let keterangan = match[3].trim();
+            const tipe = isPemasukan ? '📈 Pemasukan' : '📉 Pengeluaran';
+            if (jumlah <= 0) return await ctx.reply('⚠️ Jumlah uang harus > 0.');
+
+            let reminderDate = null;
+            const remMatch = keterangan.match(/\s+(?:tgl|tanggal|tiap)\s*(\d{1,2})$/i);
+            if (remMatch) {
+                const parsed = parseInt(remMatch[1], 10);
+                if (parsed >= 1 && parsed <= 31) { reminderDate = parsed; keterangan = keterangan.replace(remMatch[0], '').trim(); }
             }
-
-            const icon = tx.tipe === '📉 Pengeluaran' ? '📉' : '📈';
-            finalReply += `\n${icon} Rp ${tx.jumlah.toLocaleString('id-ID')} | ${tx.keterangan}`;
-            if (tx.reminderDate) finalReply += ` *(Ingat tgl ${tx.reminderDate})*`;
-            if (alertMsg) finalReply += alertMsg;
+            transactions.push({ tipe, jumlah, keterangan, kategori: isPemasukan ? 'Pemasukan' : getKategori(keterangan), reminderDate });
+        } else {
+            if (!genAI) return await ctx.reply('❌ Format tidak dikenali dan GEMINI API KEY tidak ada.\n\nKetik: `50000 kopi`', { parse_mode: 'Markdown' });
+            const loadingAI = await ctx.reply('🤖 Memproses dengan AI...');
+            try {
+                const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+                const prompt = `Ekstrak satu atau beberapa transaksi keuangan dari teks ini: "${text}". Output HANYA JSON array: [{"tipe": "Pengeluaran"|"Pemasukan", "jumlah": <angka>, "keterangan": "<deskripsi>"}] tanpa backtick atau markdown tambahan.`;
+                const result = await model.generateContent(prompt);
+                let jsonText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+                const parsed = JSON.parse(jsonText);
+                
+                // Fix for when Gemini returns an object instead of array
+                const parsedArray = Array.isArray(parsed) ? parsed : [parsed];
+                
+                for (const item of parsedArray) {
+                    transactions.push({
+                        tipe: item.tipe === 'Pemasukan' ? '📈 Pemasukan' : '📉 Pengeluaran',
+                        jumlah: item.jumlah, keterangan: item.keterangan,
+                        kategori: item.tipe === 'Pemasukan' ? 'Pemasukan' : getKategori(item.keterangan),
+                        reminderDate: null
+                    });
+                }
+                await ctx.telegram.deleteMessage(ctx.chat.id, loadingAI.message_id).catch(() => {});
+            } catch (e) {
+                console.error(e);
+                return await ctx.telegram.editMessageText(ctx.chat.id, loadingAI.message_id, null, '❌ AI gagal memahami pesanmu.').catch(() => {});
+            }
         }
 
-        const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-        await updateDashboard(doc, serviceAccountAuth, `${monthNames[new Date().getMonth()]} ${new Date().getFullYear()}`);
-        ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, finalReply, { parse_mode: 'Markdown', ...mainMenu });
-    } catch (err) {
-        console.error(err);
-        ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, `❌ Kesalahan Sistem: ${err.message}`);
+        if (transactions.length === 0) return;
+
+        const loadingMsg = await ctx.reply('⏳ Menyimpan...');
+        try {
+            const serviceAccountAuth = getAuth();
+            const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth);
+            await doc.loadInfo();
+            const sheet = await getSheet(doc, serviceAccountAuth);
+            const dateStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+            let finalReply = "✅ *Transaksi Berhasil Dicatat!*\n";
+            for (const tx of transactions) {
+                await sheet.addRow({ Tanggal: dateStr, Tipe: tx.tipe, Jumlah: tx.jumlah, Keterangan: tx.keterangan, Kategori: tx.kategori });
+                if (tx.reminderDate) await addReminder(doc, tx.keterangan, tx.reminderDate, ctx.chat.id);
+
+                let alertMsg = "";
+                if (tx.tipe === '📉 Pengeluaran') {
+                    const currentMonthTitle = `${["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"][new Date().getMonth()]} ${new Date().getFullYear()}`;
+                    const budgetRes = await checkBudget(doc, currentMonthTitle, tx.kategori, tx.jumlah);
+                    if (budgetRes) alertMsg = `\n⚠️ *AWAS BUDGET OVERLOAD!*\nKategori *${tx.kategori}* melampaui batas (Rp ${budgetRes.currentTotal.toLocaleString('id-ID')} / Rp ${budgetRes.batas.toLocaleString('id-ID')})!`;
+                }
+
+                const icon = tx.tipe === '📉 Pengeluaran' ? '📉' : '📈';
+                finalReply += `\n${icon} Rp ${tx.jumlah.toLocaleString('id-ID')} | ${tx.keterangan}`;
+                if (tx.reminderDate) finalReply += ` *(Ingat tgl ${tx.reminderDate})*`;
+                if (alertMsg) finalReply += alertMsg;
+            }
+
+            const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+            await updateDashboard(doc, serviceAccountAuth, `${monthNames[new Date().getMonth()]} ${new Date().getFullYear()}`);
+            await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, finalReply, { parse_mode: 'Markdown', ...mainMenu }).catch(() => {});
+        } catch (err) {
+            console.error(err);
+            await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, `❌ Kesalahan Sistem: ${err.message}`).catch(() => {});
+        }
+    } catch (fatalError) {
+        console.error("FATAL ERROR:", fatalError);
+        await ctx.reply(`❌ FATAL ERROR: ${fatalError.message}`).catch(() => {});
     }
 });
 
