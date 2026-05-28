@@ -201,7 +201,7 @@ bot.action('btn_ringkasan', async (ctx) => {
         const jumlah = parseFloat(jumlahStr.toString().replace(/[^\d.-]/g, ''));
         
         if (tipe === '📈 Pemasukan' || tipe === 'pemasukan') totalPemasukan += jumlah;
-        if (tipe === '📉 Pengeluaran' || tipe === 'pengeluaran') totalPengeluaran +=াস্থ্য totalPengeluaran += jumlah;
+        if (tipe === '📉 Pengeluaran' || tipe === 'pengeluaran') totalPengeluaran += jumlah;
     });
 
     const saldo = totalPemasukan - totalPengeluaran;
