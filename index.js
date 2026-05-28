@@ -357,7 +357,7 @@ bot.on('text', async (ctx) => {
         if (!genAI) return ctx.reply('❌ Format tidak dikenali dan GEMINI_API_KEY tidak ada.\n\nKetik: `50000 kopi`', { parse_mode: 'Markdown' });
         const loadingAI = await ctx.reply('🤖 Memproses dengan AI...');
         try {
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
             const prompt = `Ekstrak satu atau beberapa transaksi keuangan dari teks ini: "${text}". Output HANYA JSON array: [{"tipe": "Pengeluaran"|"Pemasukan", "jumlah": <angka>, "keterangan": "<deskripsi>"}] tanpa backtick atau markdown tambahan.`;
             const result = await model.generateContent(prompt);
             let jsonText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
