@@ -364,10 +364,7 @@ bot.on('text', async (ctx) => {
             if (!genAI) return await ctx.reply('❌ Format tidak dikenali dan GEMINI API KEY tidak ada.\n\nKetik: `50000 kopi`', { parse_mode: 'Markdown' });
             const loadingAI = await ctx.reply('🤖 Memproses dengan AI...');
             try {
-                const model = genAI.getGenerativeModel({ 
-                    model: "gemini-1.5-flash",
-                    generationConfig: { responseMimeType: "application/json" }
-                });
+                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
                 const prompt = `Ekstrak satu atau beberapa transaksi keuangan dari teks ini: "${text}". Output HANYA array JSON murni: [{"tipe": "Pengeluaran"|"Pemasukan", "jumlah": <angka>, "keterangan": "<deskripsi singkat>"}] tanpa basa-basi atau penjelasan lain.`;
                 const result = await model.generateContent(prompt);
                 
@@ -380,7 +377,7 @@ bot.on('text', async (ctx) => {
                     end = rawText.lastIndexOf('}');
                 }
                 
-                if (start === -1 || end === -1) throw new Error("Tidak ada JSON ditemukan");
+                if (start === -1 || end === -1) throw new Error("Tidak ada JSON ditemukan: " + rawText);
                 
                 let jsonText = rawText.substring(start, end + 1);
                 const parsed = JSON.parse(jsonText);
@@ -398,8 +395,8 @@ bot.on('text', async (ctx) => {
                 }
                 await ctx.telegram.deleteMessage(ctx.chat.id, loadingAI.message_id).catch(() => {});
             } catch (e) {
-                console.error("AI Parse Error:", e.message);
-                return await ctx.telegram.editMessageText(ctx.chat.id, loadingAI.message_id, null, '❌ AI gagal memahami pesanmu. Pastikan kalimatnya jelas.').catch(() => {});
+                console.error("AI Parse Error:", e);
+                return await ctx.telegram.editMessageText(ctx.chat.id, loadingAI.message_id, null, `❌ AI Error: ${e.message}`).catch(() => {});
             }
         }
 
