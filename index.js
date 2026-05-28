@@ -184,6 +184,15 @@ async function getSheet(doc, serviceAccountAuth) {
         try {
             await sheet.loadHeaderRow();
             if (sheet.headerValues.length === 4) await sheet.setHeaderRow(['Tanggal', 'Tipe', 'Jumlah', 'Keterangan', 'Kategori']);
+            
+            await sheet.loadCells('A1:E1');
+            for (let i = 0; i < 5; i++) {
+                const cell = sheet.getCell(0, i);
+                cell.textFormat = { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } };
+                cell.backgroundColor = { red: 0.1, green: 0.2, blue: 0.4 };
+                cell.horizontalAlignment = 'CENTER';
+            }
+            await sheet.saveUpdatedCells();
         } catch(e) {}
     }
     await updateDashboard(doc, serviceAccountAuth, currentMonthTitle);
