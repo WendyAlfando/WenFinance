@@ -99,7 +99,13 @@ async function updateDashboard(doc, serviceAccountAuth, currentMonthTitle) {
     if (!dashboardSheet) {
         dashboardSheet = await doc.addSheet({ title: '📊 Dashboard Utama', index: 0, gridProperties: { columnCount: 15, rowCount: 40 } });
         isNew = true;
-    } else if (dashboardSheet.index !== 0) await dashboardSheet.updateProperties({ index: 0 });
+    } else if (dashboardSheet.index !== 0) {
+        await dashboardSheet.updateProperties({ index: 0 });
+    }
+
+    if (dashboardSheet.rowCount < 30 || dashboardSheet.columnCount < 3) {
+        await dashboardSheet.resize({ rowCount: Math.max(dashboardSheet.rowCount, 40), columnCount: Math.max(dashboardSheet.columnCount, 15) }).catch(()=>{});
+    }
 
     await dashboardSheet.loadCells('A1:C30');
 
