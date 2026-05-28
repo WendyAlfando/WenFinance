@@ -412,7 +412,10 @@ bot.on('text', async (ctx) => {
 
             const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
             await updateDashboard(doc, serviceAccountAuth, `${monthNames[new Date().getMonth()]} ${new Date().getFullYear()}`);
-            await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, finalReply, { parse_mode: 'Markdown', ...mainMenu }).catch(() => {});
+            
+            // Hapus pesan loading dan kirim pesan baru agar muncul notifikasi push
+            await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(() => {});
+            await ctx.reply(finalReply, { parse_mode: 'Markdown', ...mainMenu }).catch(() => {});
         } catch (err) {
             console.error(err);
             await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, `❌ Kesalahan Sistem: ${err.message}`).catch(() => {});
