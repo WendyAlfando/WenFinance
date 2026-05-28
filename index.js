@@ -364,10 +364,25 @@ bot.on('text', async (ctx) => {
             if (!genAI) return await ctx.reply('❌ Format tidak dikenali dan GEMINI API KEY tidak ada.\n\nKetik: `50000 kopi`', { parse_mode: 'Markdown' });
             const loadingAI = await ctx.reply('🤖 Memproses dengan AI...');
             try {
-                const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-                const prompt = `Ekstrak satu atau beberapa transaksi keuangan dari teks ini: "${text}". Output HANYA JSON array: [{"tipe": "Pengeluaran"|"Pemasukan", "jumlah": <angka>, "keterangan": "<deskripsi>"}] tanpa backtick atau markdown tambahan.`;
+                const model = genAI.getGenerativeModel({ 
+                    model: "gemini-1.5-flash",
+                    generationConfig: { responseMimeType: "application/json" }
+                });
+                const prompt = `Ekstrak satu atau beberapa transaksi keuangan dari teks ini: "${text}". Output HANYA array JSON murni: [{"tipe": "Pengeluaran"|"Pemasukan", "jumlah": <angka>, "keterangan": "<deskripsi singkat>"}] tanpa basa-basi atau penjelasan lain.`;
                 const result = await model.generateContent(prompt);
-                let jsonText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+                
+                let rawText = result.response.text();
+                // Cari blok JSON (array atau object) di dalam text yang mungkin cerewet
+                let start = rawText.indexOf('[');
+                let end = rawText.lastIndexOf(']');
+                if (start === -1) {
+                    start = rawText.indexOf('{');
+                    end = rawText.lastIndexOf('}');
+                }
+                
+                if (start === -1 || end === -1) throw new Error("Tidak ada JSON ditemukan");
+                
+                let jsonText = rawText.substring(start, end + 1);
                 const parsed = JSON.parse(jsonText);
                 
                 // Fix for when Gemini returns an object instead of array
@@ -383,8 +398,8 @@ bot.on('text', async (ctx) => {
                 }
                 await ctx.telegram.deleteMessage(ctx.chat.id, loadingAI.message_id).catch(() => {});
             } catch (e) {
-                console.error(e);
-                return await ctx.telegram.editMessageText(ctx.chat.id, loadingAI.message_id, null, '❌ AI gagal memahami pesanmu.').catch(() => {});
+                console.error("AI Parse Error:", e.message);
+                return await ctx.telegram.editMessageText(ctx.chat.id, loadingAI.message_id, null, '❌ AI gagal memahami pesanmu. Pastikan kalimatnya jelas.').catch(() => {});
             }
         }
 
