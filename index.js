@@ -216,7 +216,8 @@ const mainMenu = Markup.inlineKeyboard([
     [Markup.button.callback('🔙 Batal Terakhir', 'btn_undo'), Markup.button.callback('💡 Bantuan', 'btn_help')]
 ]);
 
-bot.start((ctx) => {
+bot.start(async (ctx) => {
+    await ctx.reply('Memperbarui sistem menu...', Markup.removeKeyboard());
     ctx.reply(
         'Halo! 👋 Saya adalah Bot Pencatat Keuangan Anda.\n\n' +
         '🟢 *Pemasukan:* Ketik `+<angka> <keterangan>`\nContoh: `+15000000 gaji bulan ini`\n\n' +
@@ -226,8 +227,14 @@ bot.start((ctx) => {
     );
 });
 
-bot.command('menu', (ctx) => {
+bot.command('menu', async (ctx) => {
+    await ctx.reply('Memperbarui menu...', Markup.removeKeyboard());
     ctx.reply('🎛 *Menu Utama*', { parse_mode: 'Markdown', ...mainMenu });
+});
+
+bot.hears(['📊 Ringkasan Keuangan', '💡 Bantuan', '🔙 Batal Terakhir (Undo)', '📊 Ringkasan Bulan Ini'], async (ctx) => {
+    await ctx.reply('Sistem menu telah diperbarui. Menghapus menu lama...', Markup.removeKeyboard());
+    ctx.reply('Gunakan tombol menu interaktif yang baru di bawah ini 👇', { parse_mode: 'Markdown', ...mainMenu });
 });
 
 bot.action('btn_help', (ctx) => {
