@@ -85,8 +85,11 @@ async function updateDashboard(doc, serviceAccountAuth, currentMonthTitle) {
             else allTimeKeluar += jumlah;
 
             if (sheet.title === currentMonthTitle) {
-                if (isIncome) monthMasuk += jumlah;
-                else {
+                if (isIncome) {
+                    monthMasuk += jumlah;
+                    const cat = row.get('Kategori') || 'Pemasukan';
+                    catTotals[cat] = (catTotals[cat] || 0) + jumlah;
+                } else {
                     monthKeluar += jumlah;
                     const cat = row.get('Kategori') || 'Lain-lain';
                     catTotals[cat] = (catTotals[cat] || 0) + jumlah;
@@ -124,7 +127,7 @@ async function updateDashboard(doc, serviceAccountAuth, currentMonthTitle) {
     dashboardSheet.getCell(8, 0).value = "Total Pengeluaran"; dashboardSheet.getCell(8, 1).value = allTimeKeluar;
     dashboardSheet.getCell(9, 0).value = "Sisa Saldo"; dashboardSheet.getCell(9, 1).value = allTimeMasuk - allTimeKeluar;
 
-    dashboardSheet.getCell(11, 0).value = "Distribusi Kategori Bulan Ini";
+    dashboardSheet.getCell(11, 0).value = "Distribusi Keuangan Bulan Ini";
     dashboardSheet.getCell(11, 0).textFormat = { bold: true, fontSize: 12 };
     
     const categories = Object.keys(catTotals);
@@ -235,8 +238,8 @@ cron.schedule('0 8 * * *', async () => {
 
 // 8. Menu Telegram
 const mainMenu = Markup.inlineKeyboard([
-    [Markup.button.callback('📊 Ringkasan & Dashboard', 'btn_ringkasan'), Markup.button.callback('📄 Export Laporan', 'btn_laporan')],
-    [Markup.button.callback('🔙 Batal Terakhir', 'btn_undo'), Markup.button.callback('💡 Bantuan', 'btn_help')]
+    [Markup.button.callback('📊 Ringkasan Bulanan', 'btn_ringkasan'), Markup.button.callback('📈 Grafik Harian', 'btn_grafik_harian')],
+    [Markup.button.callback('📄 Export Laporan PDF', 'btn_laporan'), Markup.button.callback('🔙 Batal Terakhir', 'btn_undo')]
 ]);
 
 bot.start(async (ctx) => {
@@ -338,7 +341,106 @@ bot.action('btn_undo', async (ctx) => { /* logic sama seperti sebelumnya, skip i
         ctx.reply('✅ Transaksi terakhir dibatalkan.');
     } else ctx.reply('⚠️ Kosong.');
 });
-bot.action('btn_laporan', async (ctx) => { /* generate CSV+PDF ... */ ctx.answerCbQuery('Fitur laporan berjalan'); });
+bot.action('btn_grafik_harian', async (ctx) => {
+    ctx.answerCbQuery('Membuat grafik harian...');
+    const auth = getAuth();
+    if (!auth) return;
+    const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, auth);
+    await doc.loadInfo();
+    const sheet = await getSheet(doc, auth);
+    const rows = await sheet.getRows();
+    
+    let dailyTotals = {};
+    for (const row of rows) {
+        if (row.get('Tipe').includes('Pengeluaran')) {
+            // Tanggal format: "DD/MM/YYYY, HH:mm" -> get "DD"
+            const dateStr = row.get('Tanggal') || '';
+            const dayMatch = dateStr.match(/^(\d{2})\//);
+            if (dayMatch) {
+                const day = dayMatch[1];
+                const val = parseFloat(row.get('Jumlah').replace(/[^\d.-]/g, ''));
+                dailyTotals[day] = (dailyTotals[day] || 0) + val;
+            }
+        }
+    }
+    
+    const labels = Object.keys(dailyTotals).sort((a,b) => parseInt(a) - parseInt(b));
+    const data = labels.map(l => dailyTotals[l]);
+    
+    if (labels.length > 0) {
+        const chartConfig = {
+            type: 'line',
+            data: { labels: labels.map(l => 'Tgl ' + l), datasets: [{ label: 'Pengeluaran', data: data, borderColor: 'rgb(255, 99, 132)', backgroundColor: 'rgba(255, 99, 132, 0.5)', fill: true, tension: 0.4 }] }
+        };
+        const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&w=600&h=400`;
+        await ctx.replyWithPhoto(chartUrl, { caption: '📈 Grafik Tren Pengeluaran Harian', ...mainMenu });
+    } else {
+        ctx.reply('✅ Belum ada pengeluaran bulan ini untuk grafik.', { ...mainMenu });
+    }
+});
+
+bot.action('btn_laporan', async (ctx) => {
+    const loadingMsg = await ctx.reply('⏳ Sedang men-generate file PDF...');
+    ctx.answerCbQuery();
+    try {
+        const auth = getAuth();
+        const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, auth);
+        await doc.loadInfo();
+        const sheet = await getSheet(doc, auth);
+        const rows = await sheet.getRows();
+        
+        let totalPemasukan = 0;
+        let totalPengeluaran = 0;
+        const transactions = [];
+
+        for (const row of rows) {
+            const tipe = row.get('Tipe');
+            const jumlah = parseFloat(row.get('Jumlah').replace(/[^\d.-]/g, ''));
+            const isIncome = tipe.includes('Pemasukan');
+            if (isIncome) totalPemasukan += jumlah;
+            else totalPengeluaran += jumlah;
+            
+            transactions.push({
+                tgl: row.get('Tanggal').split(',')[0],
+                tipe: isIncome ? '+' : '-',
+                jumlah: jumlah,
+                ket: row.get('Keterangan')
+            });
+        }
+        
+        // Buat PDF
+        const pdf = new PDFDocument({ margin: 50 });
+        const buffers = [];
+        pdf.on('data', buffers.push.bind(buffers));
+        
+        // Isi konten PDF
+        pdf.fontSize(20).text('Laporan Keuangan Bulanan', { align: 'center' });
+        pdf.moveDown();
+        pdf.fontSize(14).text(`Bulan: ${sheet.title}`);
+        pdf.text(`Total Pemasukan: Rp ${totalPemasukan.toLocaleString('id-ID')}`);
+        pdf.text(`Total Pengeluaran: Rp ${totalPengeluaran.toLocaleString('id-ID')}`);
+        pdf.text(`Saldo Akhir: Rp ${(totalPemasukan - totalPengeluaran).toLocaleString('id-ID')}`);
+        pdf.moveDown(2);
+        
+        pdf.fontSize(12).text('Rincian Transaksi:', { underline: true });
+        pdf.moveDown(0.5);
+        for (const tx of transactions) {
+            const color = tx.tipe === '+' ? 'green' : 'red';
+            pdf.fillColor(color).text(`${tx.tgl} | ${tx.tipe} Rp ${tx.jumlah.toLocaleString('id-ID')} | ${tx.ket}`);
+        }
+        
+        pdf.end();
+        pdf.on('end', async () => {
+            const pdfData = Buffer.concat(buffers);
+            await ctx.replyWithDocument({ source: pdfData, filename: `Laporan_${sheet.title.replace(' ', '_')}.pdf` });
+            await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(()=>{});
+        });
+        
+    } catch (err) {
+        console.error(err);
+        await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, '❌ Gagal men-generate PDF.');
+    }
+});
 
 bot.on('text', async (ctx) => {
     try {
