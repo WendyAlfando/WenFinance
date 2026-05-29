@@ -630,7 +630,8 @@ app.get('/api/dashboard', async (req, res) => {
         await doc.loadInfo();
         const sheet = await getSheet(doc, auth);
         const rows = await sheet.getRows();
-        let totalMasuk = 0; let totalKeluar = 0; let catTotals = {}; let dailyTotals = {}; let transactions = [];
+        let totalMasuk = 0; let totalKeluar = 0; let dailyTotals = {}; let transactions = [];
+        let expenseCatTotals = {}; let incomeCatTotals = {};
         let wallets = { 'BCA':0, 'Mandiri':0, 'Gopay':0, 'Dana':0, 'OVO':0, 'ShopeePay':0, 'Cash':0 };
         for (let i = rows.length - 1; i >= Math.max(0, rows.length - 15); i--) {
             const r = rows[i];
@@ -647,19 +648,22 @@ app.get('/api/dashboard', async (req, res) => {
                 wallets[dompet] = tipe.includes('Pemasukan') ? jumlah : -jumlah;
             }
 
-            if (tipe.includes('Pemasukan')) totalMasuk += jumlah;
-            else {
+            if (tipe.includes('Pemasukan')) {
+                totalMasuk += jumlah;
+                incomeCatTotals[row.get('Kategori') || 'Pemasukan'] = (incomeCatTotals[row.get('Kategori') || 'Pemasukan'] || 0) + jumlah;
+            } else {
                 totalKeluar += jumlah;
-                catTotals[row.get('Kategori') || 'Lain-lain'] = (catTotals[row.get('Kategori') || 'Lain-lain'] || 0) + jumlah;
+                expenseCatTotals[row.get('Kategori') || 'Lain-lain'] = (expenseCatTotals[row.get('Kategori') || 'Lain-lain'] || 0) + jumlah;
                 const dateStr = row.get('Tanggal') || '';
                 const dayMatch = dateStr.match(/^(\d{2})\//);
                 if (dayMatch) dailyTotals[dayMatch[1]] = (dailyTotals[dayMatch[1]] || 0) + jumlah;
             }
         }
-        const categories = Object.keys(catTotals).map(k => ({ name: k, amount: catTotals[k] })).sort((a,b)=>b.amount-a.amount);
+        const expenseCategories = Object.keys(expenseCatTotals).map(k => ({ name: k, amount: expenseCatTotals[k] })).sort((a,b)=>b.amount-a.amount);
+        const incomeCategories = Object.keys(incomeCatTotals).map(k => ({ name: k, amount: incomeCatTotals[k] })).sort((a,b)=>b.amount-a.amount);
         const dailyLabels = Object.keys(dailyTotals).sort((a,b)=>parseInt(a)-parseInt(b));
         const dailyData = dailyLabels.map(l => dailyTotals[l]);
-        res.json({ month: sheet.title, totalMasuk, totalKeluar, categories, dailyLabels, dailyData, transactions, wallets });
+        res.json({ month: sheet.title, totalMasuk, totalKeluar, expenseCategories, incomeCategories, dailyLabels, dailyData, transactions, wallets });
     } catch(e) { res.status(500).json({error: e.message}); }
 });
 

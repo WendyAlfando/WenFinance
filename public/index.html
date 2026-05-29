@@ -55,16 +55,24 @@
 
             <!-- Charts -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Pie Chart -->
+                <!-- Pie Chart Pengeluaran -->
                 <div class="glass p-5 rounded-2xl">
-                    <h3 class="text-lg font-semibold mb-4 text-slate-200">Distribusi Kategori</h3>
+                    <h3 class="text-lg font-semibold mb-4 text-slate-200">Distribusi Pengeluaran</h3>
                     <div class="relative h-64">
-                        <canvas id="pieChart"></canvas>
+                        <canvas id="expensePieChart"></canvas>
                     </div>
                 </div>
                 
-                <!-- Line Chart -->
+                <!-- Pie Chart Pemasukan -->
                 <div class="glass p-5 rounded-2xl">
+                    <h3 class="text-lg font-semibold mb-4 text-slate-200">Distribusi Pemasukan</h3>
+                    <div class="relative h-64">
+                        <canvas id="incomePieChart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Line Chart -> Bar Chart -->
+                <div class="glass p-5 rounded-2xl md:col-span-2">
                     <h3 class="text-lg font-semibold mb-4 text-slate-200">Tren Pengeluaran Harian</h3>
                     <div class="relative h-64">
                         <canvas id="lineChart"></canvas>
@@ -123,18 +131,32 @@
                     }
                 }
 
-                // Pie Chart
-                new Chart(document.getElementById('pieChart'), {
+                // Expense Pie Chart
+                new Chart(document.getElementById('expensePieChart'), {
                     type: 'doughnut',
                     data: {
-                        labels: data.categories.map(c => c.name),
+                        labels: data.expenseCategories.map(c => c.name),
                         datasets: [{
-                            data: data.categories.map(c => c.amount),
-                            backgroundColor: ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#64748b'],
+                            data: data.expenseCategories.map(c => c.amount),
+                            backgroundColor: ['#ef4444', '#f59e0b', '#8b5cf6', '#ec4899', '#64748b', '#3b82f6', '#10b981'],
                             borderWidth: 0
                         }]
                     },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#cbd5e1' } } } }
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#cbd5e1' } } } }
+                });
+
+                // Income Pie Chart
+                new Chart(document.getElementById('incomePieChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.incomeCategories.map(c => c.name),
+                        datasets: [{
+                            data: data.incomeCategories.map(c => c.amount),
+                            backgroundColor: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#cbd5e1' } } } }
                 });
 
                 // Line Chart -> Bar Chart
