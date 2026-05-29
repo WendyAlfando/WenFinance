@@ -46,6 +46,13 @@
                 </div>
             </div>
 
+            <!-- Wallets -->
+            <div class="glass p-5 rounded-2xl mt-4">
+                <h3 class="text-lg font-semibold mb-3 text-slate-200">Saldo Dompet & Rekening</h3>
+                <div id="wallets-container" class="flex flex-wrap gap-3">
+                </div>
+            </div>
+
             <!-- Charts -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <!-- Pie Chart -->
@@ -103,6 +110,19 @@
                 document.getElementById('keluar').innerText = fmt(data.totalKeluar);
                 document.getElementById('saldo').innerText = fmt(data.totalMasuk - data.totalKeluar);
 
+                // Render Wallets
+                const walletContainer = document.getElementById('wallets-container');
+                if(data.wallets) {
+                    for(const [wName, wAmount] of Object.entries(data.wallets)) {
+                        if(wAmount !== 0 || wName === 'Cash') {
+                            const div = document.createElement('div');
+                            div.className = 'bg-slate-800/80 border border-slate-700 px-4 py-2 rounded-lg';
+                            div.innerHTML = `<span class="text-xs text-slate-400 block">${wName}</span><span class="font-bold text-slate-200">${fmt(wAmount)}</span>`;
+                            walletContainer.appendChild(div);
+                        }
+                    }
+                }
+
                 // Pie Chart
                 new Chart(document.getElementById('pieChart'), {
                     type: 'doughnut',
@@ -117,20 +137,19 @@
                     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#cbd5e1' } } } }
                 });
 
-                // Line Chart
+                // Line Chart -> Bar Chart
                 new Chart(document.getElementById('lineChart'), {
-                    type: 'line',
+                    type: 'bar',
                     data: {
                         labels: data.dailyLabels,
                         datasets: [{
                             label: 'Pengeluaran',
                             data: data.dailyData,
-                            borderColor: '#3b82f6',
-                            backgroundColor: 'rgba(59, 130, 246, 0.2)',
-                            tension: 0.4, fill: true
+                            backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                            borderRadius: 4
                         }]
                     },
-                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } }, y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } } }, plugins: { legend: { display: false } } }
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#94a3b8' }, grid: { display: false } }, y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } } }, plugins: { legend: { display: false } } }
                 });
                 
                 // Transactions Table

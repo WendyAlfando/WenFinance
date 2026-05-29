@@ -398,8 +398,8 @@ bot.action('btn_grafik_harian', async (ctx) => {
     
     if (labels.length > 0) {
         const chartConfig = {
-            type: 'line',
-            data: { labels: labels.map(l => 'Tgl ' + l), datasets: [{ label: 'Pengeluaran', data: data, borderColor: 'rgb(255, 99, 132)', backgroundColor: 'rgba(255, 99, 132, 0.5)', fill: true, tension: 0.4 }] }
+            type: 'bar',
+            data: { labels: labels.map(l => 'Tgl ' + l), datasets: [{ label: 'Pengeluaran', data: data, backgroundColor: 'rgba(255, 99, 132, 0.8)' }] }
         };
         const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&w=600&h=400`;
         await ctx.replyWithPhoto(chartUrl, { caption: '📈 Grafik Tren Pengeluaran Harian', ...mainMenu });
@@ -492,13 +492,15 @@ bot.on('text', async (ctx) => {
                 const parsed = parseInt(remMatch[1], 10);
                 if (parsed >= 1 && parsed <= 31) { reminderDate = parsed; keterangan = keterangan.replace(remMatch[0], '').trim(); }
             }
-            transactions.push({ tipe, jumlah, keterangan, kategori: isPemasukan ? 'Pemasukan' : getKategori(keterangan), reminderDate });
+            transactions.push({ tipe, jumlah, keterangan, kategori: isPemasukan ? 'Pemasukan' : getKategori(keterangan), dompet: 'Cash', reminderDate });
         } else {
             if (!genAI) return await ctx.reply('❌ Format tidak dikenali dan GEMINI API KEY tidak ada.\n\nKetik: `50000 kopi`', { parse_mode: 'Markdown' });
             const loadingAI = await ctx.reply('🤖 Memproses dengan AI...');
             try {
-                const model = genAI.getGenerativeModel({ model: "gemini-3-flash" });
-                const prompt = `Ekstrak satu atau beberapa transaksi keuangan dari teks ini: "${text}". Output HANYA array JSON murni: [{"tipe": "Pengeluaran"|"Pemasukan", "jumlah": <angka>, "keterangan": "<deskripsi singkat>"}] tanpa basa-basi atau penjelasan lain.`;
+                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                const prompt = `Ekstrak satu atau beberapa transaksi keuangan dari teks ini: "${text}". 
+Deteksi juga "dompet" atau rekening asal (BCA, Mandiri, Gopay, Dana, OVO, ShopeePay, atau Cash). Jika tidak disebutkan, default ke "Cash".
+Output HANYA array JSON murni: [{"tipe": "Pengeluaran"|"Pemasukan", "jumlah": <angka>, "keterangan": "<deskripsi singkat>", "dompet": "<Nama Dompet>"}] tanpa penjelasan lain.`;
                 const result = await model.generateContent(prompt);
                 
                 let rawText = result.response.text();
@@ -523,6 +525,7 @@ bot.on('text', async (ctx) => {
                         tipe: item.tipe === 'Pemasukan' ? '📈 Pemasukan' : '📉 Pengeluaran',
                         jumlah: item.jumlah, keterangan: item.keterangan,
                         kategori: item.tipe === 'Pemasukan' ? 'Pemasukan' : getKategori(item.keterangan),
+                        dompet: item.dompet || 'Cash',
                         reminderDate: null
                     });
                 }
@@ -545,7 +548,7 @@ bot.on('text', async (ctx) => {
 
             let finalReply = "✅ *Transaksi Berhasil Dicatat!*\n";
             for (const tx of transactions) {
-                await sheet.addRow({ Tanggal: dateStr, Tipe: tx.tipe, Jumlah: tx.jumlah, Keterangan: tx.keterangan, Kategori: tx.kategori });
+                await sheet.addRow({ Tanggal: dateStr, Tipe: tx.tipe, Jumlah: tx.jumlah, Keterangan: tx.keterangan, Kategori: tx.kategori, Dompet: tx.dompet || 'Cash' });
                 if (tx.reminderDate) await addReminder(doc, tx.keterangan, tx.reminderDate, ctx.chat.id);
 
                 let alertMsg = "";
@@ -588,7 +591,7 @@ bot.action(/pay_sub_(.+)_(.+)/, async (ctx) => {
         await doc.loadInfo();
         const sheet = await getSheet(doc, auth);
         const dateStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-        await sheet.addRow({ Tanggal: dateStr, Tipe: '📉 Pengeluaran', Jumlah: jumlah, Keterangan: ket, Kategori: 'Tagihan & Cicilan' });
+        await sheet.addRow({ Tanggal: dateStr, Tipe: '📉 Pengeluaran', Jumlah: jumlah, Keterangan: ket, Kategori: 'Tagihan & Cicilan', Dompet: 'Cash' });
         await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, `✅ Pembayaran **${ket}** (Rp ${jumlah.toLocaleString('id-ID')}) dicatat!`, {parse_mode:'Markdown'});
     } catch(e) { await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, '❌ Gagal mencatat.'); }
 });
@@ -613,7 +616,7 @@ bot.on('photo', async (ctx) => {
         await doc.loadInfo();
         const sheet = await getSheet(doc, auth);
         const dateStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-        await sheet.addRow({ Tanggal: dateStr, Tipe: '📉 Pengeluaran', Jumlah: parsed.jumlah, Keterangan: parsed.keterangan, Kategori: getKategori(parsed.keterangan) });
+        await sheet.addRow({ Tanggal: dateStr, Tipe: '📉 Pengeluaran', Jumlah: parsed.jumlah, Keterangan: parsed.keterangan, Kategori: getKategori(parsed.keterangan), Dompet: 'Cash' });
         await ctx.telegram.deleteMessage(ctx.chat.id, loading.message_id).catch(()=>{});
         ctx.reply(`✅ **Struk Berhasil Dicatat!**\n📉 Rp ${parseInt(parsed.jumlah).toLocaleString('id-ID')} | ${parsed.keterangan}`, {parse_mode: 'Markdown'});
     } catch(e) { await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, null, `❌ Gagal membaca struk: ${e.message}`); }
@@ -628,6 +631,7 @@ app.get('/api/dashboard', async (req, res) => {
         const sheet = await getSheet(doc, auth);
         const rows = await sheet.getRows();
         let totalMasuk = 0; let totalKeluar = 0; let catTotals = {}; let dailyTotals = {}; let transactions = [];
+        let wallets = { 'BCA':0, 'Mandiri':0, 'Gopay':0, 'Dana':0, 'OVO':0, 'ShopeePay':0, 'Cash':0 };
         for (let i = rows.length - 1; i >= Math.max(0, rows.length - 15); i--) {
             const r = rows[i];
             transactions.push({ tgl: r.get('Tanggal').split(',')[0], ket: r.get('Keterangan'), kat: r.get('Kategori'), tipe: r.get('Tipe'), jumlah: parseFloat(r.get('Jumlah').replace(/[^\d.-]/g, '')) });
@@ -635,6 +639,14 @@ app.get('/api/dashboard', async (req, res) => {
         for (const row of rows) {
             const tipe = row.get('Tipe');
             const jumlah = parseFloat(row.get('Jumlah').replace(/[^\d.-]/g, ''));
+            const dompet = row.get('Dompet') || 'Cash';
+            if (wallets[dompet] !== undefined) {
+                if (tipe.includes('Pemasukan')) wallets[dompet] += jumlah;
+                else wallets[dompet] -= jumlah;
+            } else {
+                wallets[dompet] = tipe.includes('Pemasukan') ? jumlah : -jumlah;
+            }
+
             if (tipe.includes('Pemasukan')) totalMasuk += jumlah;
             else {
                 totalKeluar += jumlah;
@@ -647,7 +659,7 @@ app.get('/api/dashboard', async (req, res) => {
         const categories = Object.keys(catTotals).map(k => ({ name: k, amount: catTotals[k] })).sort((a,b)=>b.amount-a.amount);
         const dailyLabels = Object.keys(dailyTotals).sort((a,b)=>parseInt(a)-parseInt(b));
         const dailyData = dailyLabels.map(l => dailyTotals[l]);
-        res.json({ month: sheet.title, totalMasuk, totalKeluar, categories, dailyLabels, dailyData, transactions });
+        res.json({ month: sheet.title, totalMasuk, totalKeluar, categories, dailyLabels, dailyData, transactions, wallets });
     } catch(e) { res.status(500).json({error: e.message}); }
 });
 
