@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WenFinance Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    </style>
+</head>
+<body class="p-4 sm:p-8 min-h-screen">
+
+    <div class="max-w-4xl mx-auto">
+        <header class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-white tracking-tight">WenFinance</h1>
+                <p class="text-slate-400 mt-1" id="month-title">Memuat data bulan ini...</p>
+            </div>
+            <div class="h-10 w-10 bg-blue-600 rounded-full flex items-center justify-center text-xl shadow-[0_0_15px_rgba(37,99,235,0.5)]">💳</div>
+        </header>
+
+        <!-- Loading State -->
+        <div id="loading" class="text-center py-20 text-slate-400">
+            <svg class="animate-spin h-8 w-8 mx-auto mb-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            Mengambil data dari Google Sheets...
+        </div>
+
+        <div id="dashboard" class="hidden space-y-6">
+            <!-- Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="glass p-5 rounded-2xl">
+                    <p class="text-sm text-slate-400 font-semibold mb-1">Saldo Bulan Ini</p>
+                    <h2 id="saldo" class="text-2xl font-bold text-white">Rp 0</h2>
+                </div>
+                <div class="glass p-5 rounded-2xl border-l-4 border-l-green-500">
+                    <p class="text-sm text-slate-400 font-semibold mb-1">Pemasukan</p>
+                    <h2 id="masuk" class="text-2xl font-bold text-green-400">Rp 0</h2>
+                </div>
+                <div class="glass p-5 rounded-2xl border-l-4 border-l-red-500">
+                    <p class="text-sm text-slate-400 font-semibold mb-1">Pengeluaran</p>
+                    <h2 id="keluar" class="text-2xl font-bold text-red-400">Rp 0</h2>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Pie Chart -->
+                <div class="glass p-5 rounded-2xl">
+                    <h3 class="text-lg font-semibold mb-4 text-slate-200">Distribusi Kategori</h3>
+                    <div class="relative h-64">
+                        <canvas id="pieChart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Line Chart -->
+                <div class="glass p-5 rounded-2xl">
+                    <h3 class="text-lg font-semibold mb-4 text-slate-200">Tren Pengeluaran Harian</h3>
+                    <div class="relative h-64">
+                        <canvas id="lineChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Table -->
+            <div class="glass rounded-2xl overflow-hidden mt-6">
+                <div class="p-5 border-b border-slate-700">
+                    <h3 class="text-lg font-semibold text-slate-200">Transaksi Terakhir</h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-800/50 text-slate-400 text-sm">
+                                <th class="p-4 font-semibold">Tanggal</th>
+                                <th class="p-4 font-semibold">Keterangan</th>
+                                <th class="p-4 font-semibold">Kategori</th>
+                                <th class="p-4 font-semibold text-right">Jumlah</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tx-body" class="text-sm">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Use relative URL so it works regardless of domain/IP
+        fetch('/api/dashboard')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('dashboard').classList.remove('hidden');
+
+                document.getElementById('month-title').innerText = `Bulan: ${data.month}`;
+                
+                const fmt = (num) => 'Rp ' + num.toLocaleString('id-ID');
+                document.getElementById('masuk').innerText = fmt(data.totalMasuk);
+                document.getElementById('keluar').innerText = fmt(data.totalKeluar);
+                document.getElementById('saldo').innerText = fmt(data.totalMasuk - data.totalKeluar);
+
+                // Pie Chart
+                new Chart(document.getElementById('pieChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.categories.map(c => c.name),
+                        datasets: [{
+                            data: data.categories.map(c => c.amount),
+                            backgroundColor: ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#64748b'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#cbd5e1' } } } }
+                });
+
+                // Line Chart
+                new Chart(document.getElementById('lineChart'), {
+                    type: 'line',
+                    data: {
+                        labels: data.dailyLabels,
+                        datasets: [{
+                            label: 'Pengeluaran',
+                            data: data.dailyData,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                            tension: 0.4, fill: true
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } }, y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } } }, plugins: { legend: { display: false } } }
+                });
+                
+                // Transactions Table
+                const tbody = document.getElementById('tx-body');
+                data.transactions.forEach(tx => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b border-slate-700/50 hover:bg-slate-800/30 transition';
+                    const colorClass = tx.tipe.includes('Pemasukan') ? 'text-green-400' : 'text-red-400';
+                    tr.innerHTML = `
+                        <td class="p-4 text-slate-300">${tx.tgl}</td>
+                        <td class="p-4 font-medium text-slate-200">${tx.ket}</td>
+                        <td class="p-4 text-slate-400"><span class="bg-slate-800 px-2 py-1 rounded text-xs">${tx.kat}</span></td>
+                        <td class="p-4 text-right font-semibold ${colorClass}">${tx.tipe.includes('Pemasukan')?'+':'-'} ${fmt(tx.jumlah)}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            })
+            .catch(err => {
+                document.getElementById('loading').innerHTML = '<span class="text-red-500">Gagal memuat data. Server mungkin bermasalah.</span>';
+                console.error(err);
+            });
+    </script>
+</body>
+</html>

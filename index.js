@@ -8,10 +8,16 @@ const fs = require('fs');
 const cron = require('node-cron');
 const PDFDocument = require('pdfkit');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
 
 // 1. Inisialisasi Bot Telegram & AI
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
+const app = express();
+app.use(cors());
+app.use(express.static('public'));
 
 // 2. Auth Helper
 function getAuth() {
@@ -233,13 +239,36 @@ cron.schedule('0 8 * * *', async () => {
                 if (chatId && ket) bot.telegram.sendMessage(chatId, `⏰ *PENGINGAT TAGIHAN*\n\nHalo! Hari ini waktunya: **${ket}**.\nJika sudah dibayar, catat pengeluarannya ya!`, { parse_mode: 'Markdown' }).catch(()=>{});
             }
         }
+
+        // Cek Langganan
+        const subSheet = doc.sheetsByTitle['🔄 Langganan'];
+        if (subSheet) {
+            const subRows = await subSheet.getRows();
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const tmrwDate = tomorrow.getDate();
+            for (const row of subRows) {
+                if (parseInt(row.get('Tgl Jatuh Tempo')) === tmrwDate) {
+                    const chatId = row.get('ChatID'); 
+                    const ket = row.get('Nama Layanan');
+                    const harga = row.get('Harga');
+                    if (chatId && ket) {
+                        bot.telegram.sendMessage(chatId, `⚠️ *PENGINGAT LANGGANAN H-1*\n\nBesok waktunya bayar **${ket}** sebesar Rp ${harga}.\nSilakan klik tombol di bawah jika sudah dibayar!`, { 
+                            parse_mode: 'Markdown',
+                            reply_markup: { inline_keyboard: [[ { text: '✅ Sudah Dibayar', callback_data: `pay_sub_${ket}_${harga}` } ]] }
+                        }).catch(()=>{});
+                    }
+                }
+            }
+        }
     } catch(e) { console.error("Cron Error", e); }
 }, { timezone: "Asia/Jakarta" });
 
 // 8. Menu Telegram
 const mainMenu = Markup.inlineKeyboard([
     [Markup.button.callback('📊 Ringkasan Bulanan', 'btn_ringkasan'), Markup.button.callback('📈 Grafik Harian', 'btn_grafik_harian')],
-    [Markup.button.callback('📄 Export Laporan PDF', 'btn_laporan'), Markup.button.callback('🔙 Batal Terakhir', 'btn_undo')]
+    [Markup.button.callback('📄 Export Laporan PDF', 'btn_laporan'), Markup.button.callback('🔙 Batal Terakhir', 'btn_undo')],
+    [Markup.button.url('🌐 Buka Dashboard Visual', 'http://146.190.85.119:3000')]
 ]);
 
 bot.start(async (ctx) => {
@@ -548,6 +577,81 @@ bot.on('text', async (ctx) => {
     }
 });
 
+bot.action(/pay_sub_(.+)_(.+)/, async (ctx) => {
+    const ket = ctx.match[1];
+    const jumlah = parseInt(ctx.match[2]);
+    const loadingMsg = await ctx.reply('⏳ Mencatat...');
+    ctx.answerCbQuery();
+    try {
+        const auth = getAuth();
+        const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, auth);
+        await doc.loadInfo();
+        const sheet = await getSheet(doc, auth);
+        const dateStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        await sheet.addRow({ Tanggal: dateStr, Tipe: '📉 Pengeluaran', Jumlah: jumlah, Keterangan: ket, Kategori: 'Tagihan & Cicilan' });
+        await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, `✅ Pembayaran **${ket}** (Rp ${jumlah.toLocaleString('id-ID')}) dicatat!`, {parse_mode:'Markdown'});
+    } catch(e) { await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, '❌ Gagal mencatat.'); }
+});
+
+bot.on('photo', async (ctx) => {
+    if (!genAI) return ctx.reply('❌ GEMINI API KEY tidak ada. Fitur scan struk tidak bisa digunakan.');
+    const loading = await ctx.reply('📸 Membaca struk dengan AI...');
+    try {
+        const photo = ctx.message.photo[ctx.message.photo.length - 1];
+        const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+        const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
+        const base64Data = Buffer.from(response.data, 'binary').toString('base64');
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const prompt = `Ini foto struk. Output HANYA JSON: {"jumlah": <angka_total_tanpa_titik_tanpa_rp>, "keterangan": "Belanja di <Nama Toko>"}`;
+        const result = await model.generateContent([{ inlineData: { data: base64Data, mimeType: 'image/jpeg' } }, prompt]);
+        let rawText = result.response.text();
+        let start = rawText.indexOf('{');
+        let end = rawText.lastIndexOf('}');
+        const parsed = JSON.parse(rawText.substring(start, end + 1));
+        const auth = getAuth();
+        const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, auth);
+        await doc.loadInfo();
+        const sheet = await getSheet(doc, auth);
+        const dateStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        await sheet.addRow({ Tanggal: dateStr, Tipe: '📉 Pengeluaran', Jumlah: parsed.jumlah, Keterangan: parsed.keterangan, Kategori: getKategori(parsed.keterangan) });
+        await ctx.telegram.deleteMessage(ctx.chat.id, loading.message_id).catch(()=>{});
+        ctx.reply(`✅ **Struk Berhasil Dicatat!**\n📉 Rp ${parseInt(parsed.jumlah).toLocaleString('id-ID')} | ${parsed.keterangan}`, {parse_mode: 'Markdown'});
+    } catch(e) { await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, null, `❌ Gagal membaca struk: ${e.message}`); }
+});
+
+app.get('/api/dashboard', async (req, res) => {
+    try {
+        const auth = getAuth();
+        if (!auth) return res.status(500).json({error: 'Auth failed'});
+        const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, auth);
+        await doc.loadInfo();
+        const sheet = await getSheet(doc, auth);
+        const rows = await sheet.getRows();
+        let totalMasuk = 0; let totalKeluar = 0; let catTotals = {}; let dailyTotals = {}; let transactions = [];
+        for (let i = rows.length - 1; i >= Math.max(0, rows.length - 15); i--) {
+            const r = rows[i];
+            transactions.push({ tgl: r.get('Tanggal').split(',')[0], ket: r.get('Keterangan'), kat: r.get('Kategori'), tipe: r.get('Tipe'), jumlah: parseFloat(r.get('Jumlah').replace(/[^\d.-]/g, '')) });
+        }
+        for (const row of rows) {
+            const tipe = row.get('Tipe');
+            const jumlah = parseFloat(row.get('Jumlah').replace(/[^\d.-]/g, ''));
+            if (tipe.includes('Pemasukan')) totalMasuk += jumlah;
+            else {
+                totalKeluar += jumlah;
+                catTotals[row.get('Kategori') || 'Lain-lain'] = (catTotals[row.get('Kategori') || 'Lain-lain'] || 0) + jumlah;
+                const dateStr = row.get('Tanggal') || '';
+                const dayMatch = dateStr.match(/^(\d{2})\//);
+                if (dayMatch) dailyTotals[dayMatch[1]] = (dailyTotals[dayMatch[1]] || 0) + jumlah;
+            }
+        }
+        const categories = Object.keys(catTotals).map(k => ({ name: k, amount: catTotals[k] })).sort((a,b)=>b.amount-a.amount);
+        const dailyLabels = Object.keys(dailyTotals).sort((a,b)=>parseInt(a)-parseInt(b));
+        const dailyData = dailyLabels.map(l => dailyTotals[l]);
+        res.json({ month: sheet.title, totalMasuk, totalKeluar, categories, dailyLabels, dailyData, transactions });
+    } catch(e) { res.status(500).json({error: e.message}); }
+});
+
+app.listen(3000, () => console.log('Web App berjalan di port 3000'));
 bot.launch().then(() => console.log("Bot Telegram sedang berjalan..."));
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
